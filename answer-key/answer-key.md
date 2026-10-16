@@ -1,7 +1,7 @@
 ---
 title: Answer key for the four sample transcripts (open only after the run)
 created: 2026-10-15 16:58
-last_updated: 2026-10-15 17:28
+last_updated: 2026-10-16 09:30
 owner: the workflow author
 status: active
 ---
@@ -9,6 +9,8 @@ status: active
 # Answer key
 
 **Stop.** If you have not finished all three stages and written `output/results.md`, close this file now.
+
+This key sits in a public repository, so the test is open-book: it only tells you something if you run first and compare after. `python3 scripts/qa.py all --answer-key` scores a finished run against this key automatically.
 
 The four sample calls contain 12 planted pain points. Each is listed with an anchor phrase: a run's row matches a planted pain if its quote comes from the same buyer turn (the same paragraph of speech) that contains the anchor phrase. If one turn holds two planted pains, match the row by what its pain point describes.
 

@@ -1,7 +1,7 @@
 ---
 title: Stage 3 contract, roll up themes across calls
 created: 2026-10-15 16:58
-last_updated: 2026-10-15 17:15
+last_updated: 2026-10-16 09:30
 owner: the workflow author
 status: active
 ---
@@ -35,3 +35,5 @@ Then write two lines under the table: the theme to act on first and why, and whi
 - Every pain point ID from stage 1 appears in exactly one theme.
 - Counts match the IDs listed.
 - Every best quote appears word for word in a transcript.
+
+**Check:** run `python3 scripts/qa.py stage3` and fix the table until it passes.

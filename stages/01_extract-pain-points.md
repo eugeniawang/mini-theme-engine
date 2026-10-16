@@ -1,7 +1,7 @@
 ---
 title: Stage 1 contract, extract pain points
 created: 2026-10-15 16:58
-last_updated: 2026-10-15 17:28
+last_updated: 2026-10-16 09:30
 owner: the workflow author
 status: active
 ---
@@ -30,10 +30,12 @@ Write a heading `## Stage 1: pain points` in `output/results.md`, then one table
 |---|---|---|---|---|
 | P1 | call-1 | (buyer's name) | ... | "..." |
 
-Number IDs P1, P2, ... in transcript order, call 1 first.
+Number IDs P1, P2, ... in transcript order, call 1 first. If a transcript has no pain points, write one row for it with `none` as the ID and the call in the Call column, so it is clear the call was read.
 
 ## Definition of done
 
 - Every transcript in the folder was read in full.
 - Every row's quote appears word for word in the transcript, spoken by the named buyer or client.
 - No row comes from a seller line.
+
+**Check:** run `python3 scripts/qa.py stage1` and fix the table until it passes.

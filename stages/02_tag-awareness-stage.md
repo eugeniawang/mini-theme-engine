@@ -1,7 +1,7 @@
 ---
 title: Stage 2 contract, tag each pain point with its awareness stage
 created: 2026-10-15 16:58
-last_updated: 2026-10-15 17:15
+last_updated: 2026-10-16 09:30
 owner: the workflow author
 status: active
 ---
@@ -33,3 +33,5 @@ Under a heading `## Stage 2: awareness stages` in `output/results.md`:
 - Every stage 1 row has exactly one stage, spelled as one of the five names above.
 - Every signal is the buyer's exact words from the same call.
 - Every "why" names a tie-break question (Q1 to Q4).
+
+**Check:** run `python3 scripts/qa.py stage2` and fix the table until it passes.
