@@ -1,7 +1,7 @@
 ---
 title: Stage 2 contract, tag each pain point with its awareness stage
 created: 2026-10-15 16:58
-last_updated: 2026-10-16 09:30
+last_updated: 2026-10-16 09:36
 owner: the workflow author
 status: active
 ---
@@ -28,10 +28,22 @@ Under a heading `## Stage 2: awareness stages` in `output/results.md`:
 |---|---|---|---|---|
 | P1 | ... | (one of the five stages) | "..." | Q(n): (the answer that decided it) |
 
-## Definition of done
+## Definition of Done
 
-- Every stage 1 row has exactly one stage, spelled as one of the five names above.
-- Every signal is the buyer's exact words from the same call.
-- Every "why" names a tie-break question (Q1 to Q4).
+Stage 2 is done only when every criterion below passes. Each one is a row in the evaluation matrix that `python3 scripts/qa.py stage2` prints, with PASS or FAIL and the detail.
 
-**Check:** run `python3 scripts/qa.py stage2` and fix the table until it passes.
+| # | Criterion |
+|---|---|
+| S2-1 | The stage 2 table is under its heading. |
+| S2-2 | Every stage 1 row has exactly one stage, and no row is added. |
+| S2-3 | Every stage is spelled as one of the five names above. |
+| S2-4 | Every signal is the buyer's exact words from the same call. |
+| S2-5 | Every "why" names a tie-break question (Q1 to Q4). |
+
+## Check and redo loop
+
+1. Run `python3 scripts/qa.py stage2`. It prints the evaluation matrix, the failing rows, and an overall PASS or FAIL.
+2. **PASS:** Go on to stage 3.
+3. **FAIL (it says REDO 1 of 2 or REDO 2 of 2):** redo this stage using the failing rows it lists. Fix those rows against the transcript, rewrite the stage 2 table, and run the check again. Do not start the next stage.
+4. **At most 2 redos.** If the check fails a third time, it says STOP and writes `output/qa-stop-stage2.md` with the failing rows. Stop the run there and show that file to the human. Never mark the stage done, skip the check, or carry on as if it passed.
+5. **No Python?** Check each criterion above by hand, write the matrix yourself (criterion, PASS or FAIL, detail), and apply the same loop: at most 2 redos, then stop and report.

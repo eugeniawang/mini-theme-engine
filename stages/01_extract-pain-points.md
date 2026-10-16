@@ -1,7 +1,7 @@
 ---
 title: Stage 1 contract, extract pain points
 created: 2026-10-15 16:58
-last_updated: 2026-10-16 09:30
+last_updated: 2026-10-16 09:36
 owner: the workflow author
 status: active
 ---
@@ -32,10 +32,22 @@ Write a heading `## Stage 1: pain points` in `output/results.md`, then one table
 
 Number IDs P1, P2, ... in transcript order, call 1 first. If a transcript has no pain points, write one row for it with `none` as the ID and the call in the Call column, so it is clear the call was read.
 
-## Definition of done
+## Definition of Done
 
-- Every transcript in the folder was read in full.
-- Every row's quote appears word for word in the transcript, spoken by the named buyer or client.
-- No row comes from a seller line.
+Stage 1 is done only when every criterion below passes. Each one is a row in the evaluation matrix that `python3 scripts/qa.py stage1` prints, with PASS or FAIL and the detail.
 
-**Check:** run `python3 scripts/qa.py stage1` and fix the table until it passes.
+| # | Criterion |
+|---|---|
+| S1-1 | The stage 1 table is under its heading and every row has all five columns filled; IDs are P1, P2, ... (or `none`); each pain point is under 12 words. |
+| S1-2 | Every transcript in the folder was read in full: each call has at least one row, or a `none` row. |
+| S1-3 | Every row's quote appears word for word in the transcript, spoken by the named buyer or client. |
+| S1-4 | No row comes from a seller line. |
+| S1-5 | One row per pain: no repeated pain or quote in a call, IDs numbered in transcript order. |
+
+## Check and redo loop
+
+1. Run `python3 scripts/qa.py stage1`. It prints the evaluation matrix, the failing rows, and an overall PASS or FAIL.
+2. **PASS:** Go on to stage 2.
+3. **FAIL (it says REDO 1 of 2 or REDO 2 of 2):** redo this stage using the failing rows it lists. Fix those rows against the transcript, rewrite the stage 1 table, and run the check again. Do not start the next stage.
+4. **At most 2 redos.** If the check fails a third time, it says STOP and writes `output/qa-stop-stage1.md` with the failing rows. Stop the run there and show that file to the human. Never mark the stage done, skip the check, or carry on as if it passed.
+5. **No Python?** Check each criterion above by hand, write the matrix yourself (criterion, PASS or FAIL, detail), and apply the same loop: at most 2 redos, then stop and report.
