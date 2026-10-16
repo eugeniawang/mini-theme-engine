@@ -1,7 +1,7 @@
 ---
 title: Stage 3 contract, roll up themes across calls
 created: 2026-10-15 16:58
-last_updated: 2026-10-16 09:30
+last_updated: 2026-10-16 09:36
 owner: the workflow author
 status: active
 ---
@@ -30,10 +30,23 @@ Under a heading `## Stage 3: themes` in `output/results.md`, sorted by pain poin
 
 Then write two lines under the table: the theme to act on first and why, and which awareness stage is most common across all pain points. If two or more stages tie, name all of them and their count.
 
-## Definition of done
+## Definition of Done
 
-- Every pain point ID from stage 1 appears in exactly one theme.
-- Counts match the IDs listed.
-- Every best quote appears word for word in a transcript.
+Stage 3 is done only when every criterion below passes. Each one is a row in the evaluation matrix that `python3 scripts/qa.py stage3` prints, with PASS or FAIL and the detail.
 
-**Check:** run `python3 scripts/qa.py stage3` and fix the table until it passes.
+| # | Criterion |
+|---|---|
+| S3-1 | The stage 3 table is under its heading. |
+| S3-2 | Every pain point ID from stage 1 appears in exactly one theme. |
+| S3-3 | Counts, calls and stages seen match the IDs listed. |
+| S3-4 | Every best quote appears word for word in a transcript. |
+| S3-5 | Themes are sorted by pain point count, highest first. |
+| S3-6 | The two lines under the table are there: the theme to act on first, and the most common stage (all tied stages named). |
+
+## Check and redo loop
+
+1. Run `python3 scripts/qa.py stage3`. It prints the evaluation matrix, the failing rows, and an overall PASS or FAIL.
+2. **PASS:** Go on to scoring (START-HERE.md, "After the run").
+3. **FAIL (it says REDO 1 of 2 or REDO 2 of 2):** redo this stage using the failing rows it lists. Fix those rows against the transcript, rewrite the stage 3 table, and run the check again. Do not start the next stage.
+4. **At most 2 redos.** If the check fails a third time, it says STOP and writes `output/qa-stop-stage3.md` with the failing rows. Stop the run there and show that file to the human. Never mark the stage done, skip the check, or carry on as if it passed.
+5. **No Python?** Check each criterion above by hand, write the matrix yourself (criterion, PASS or FAIL, detail), and apply the same loop: at most 2 redos, then stop and report.

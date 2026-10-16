@@ -11,8 +11,14 @@ Usage:
 Options:
     --results PATH       results file (default: output/results.md)
     --transcripts DIR    transcript folder (default: sample-transcripts/)
+    --no-log             do not log the check or count redos
 
-Exit code 0 means every check passed. Any failure prints the file, the row and the reason, and exits 1.
+Each stage check prints an evaluation matrix (criterion, check, PASS/FAIL, detail), the failing rows, and an
+overall PASS or FAIL. stage1/stage2/stage3 also run the redo loop: every check is logged in output/qa-log.md;
+a failure says REDO 1 of 2 or REDO 2 of 2; a third failure in a row says STOP and writes
+output/qa-stop-stageN.md listing the failing rows for the human.
+
+Exit codes: 0 PASS, 1 FAIL (redo the stage), 2 STOP (failed after 2 redos; report to the human).
 """
 
 import argparse
@@ -127,13 +133,105 @@ def col(row, prefix):
     return ""
 
 
+# The evaluation matrix: one row per Definition of Done criterion in the stage file, and the check that tests it.
+CRITERIA = {
+    1: [
+        ("S1-1", "The table is there and every row is complete",
+         "heading and table found; ID is P1, P2, ... or 'none'; Call, Speaker, Pain point, Exact quote filled; pain point under 12 words"),
+        ("S1-2", "Every transcript in the folder was read",
+         "every call-N file marks its seller and has at least one row or a 'none' row; every row's call has a file"),
+        ("S1-3", "Every quote is word for word, spoken by the named buyer",
+         "quote found verbatim (whitespace, curly quotes and dashes normalised) in one line of the named speaker"),
+        ("S1-4", "No row comes from a seller line",
+         "Speaker is not the seller named in the transcript's Speakers line"),
+        ("S1-5", "One row per pain, numbered in transcript order",
+         "no duplicate IDs; no same or overlapping quote twice in a call; IDs run P1.. without gaps in transcript order"),
+    ],
+    2: [
+        ("S2-1", "The table is there", "heading and table found"),
+        ("S2-2", "Every stage 1 row has exactly one stage, none added",
+         "stage 2 IDs equal the stage 1 IDs, each exactly once"),
+        ("S2-3", "Every stage is one of the five names",
+         "stage spelled as one of the five names in awareness-framework.md"),
+        ("S2-4", "Every signal is the buyer's exact words from the same call",
+         "signal found verbatim in a line by the same buyer in the same transcript"),
+        ("S2-5", "Every 'why' names a tie-break question", "'Why' contains Q1, Q2, Q3 or Q4"),
+    ],
+    3: [
+        ("S3-1", "The table is there", "heading and table found"),
+        ("S3-2", "Every pain point ID from stage 1 appears in exactly one theme",
+         "every cited ID exists; no ID in two themes; no ID left out; no theme without IDs"),
+        ("S3-3", "Counts match the IDs listed",
+         "Count = number of IDs; Calls = the IDs' calls; Stages seen = the IDs' stage 2 tags"),
+        ("S3-4", "Every best quote appears word for word in a transcript",
+         "best quote found verbatim in a buyer line of one of the theme's calls"),
+        ("S3-5", "Themes sorted by count, highest first",
+         "counts never rise down the table; between 1 theme and one per pain point"),
+        ("S3-6", "Two lines under the table: act-first theme and most common stage",
+         "a line names the theme to act on 'first'; the 'common' line names every stage tied for the top count"),
+    ],
+}
+
+
 class Report:
     def __init__(self, results_path):
         self.file = results_path
-        self.failures = []
+        self.failures = []  # (criterion id, line)
 
-    def fail(self, stage, item, reason):
-        self.failures.append(f"FAIL {stage} | {self.file} | {item} | {reason}")
+    def fail(self, crit, item, reason):
+        stage = {"S1": "stage1", "S2": "stage2", "S3": "stage3"}.get(crit[:2], "answer-key")
+        self.failures.append((crit, f"FAIL {stage} {crit} | {self.file} | {item} | {reason}"))
+
+    def lines(self, stages=None):
+        return [l for c, l in self.failures if stages is None or (c[:2] in {f"S{s}" for s in stages})]
+
+    def matrix(self, stage):
+        """Print the stage's evaluation matrix; return True when every criterion passes."""
+        print(f"\nStage {stage} evaluation matrix ({self.file})")
+        print("| Criterion | Check | Result | Detail |")
+        print("|---|---|---|---|")
+        ok_all = True
+        for cid, text, check in CRITERIA[stage]:
+            fails = [l for c, l in self.failures if c == cid]
+            ok_all &= not fails
+            detail = "ok" if not fails else f"{len(fails)} failing; first: " + fails[0].split(" | ", 2)[-1].replace("|", "/")
+            print(f"| {cid} {text} | {check} | {'PASS' if not fails else 'FAIL'} | {detail} |")
+        print(f"Stage {stage} overall: {'PASS' if ok_all else 'FAIL'}")
+        return ok_all
+
+
+MAX_REDOS = 2
+
+
+def redo_loop(stage, passed, rep, results_path):
+    """Log this check and say what happens next: go on, redo (at most twice), or stop and report. Returns the exit code."""
+    log = results_path.parent / "qa-log.md"
+    if not log.exists():
+        log.write_text("# qa.py check log (the redo loop counts from here)\n\n| Time | Stage | Result | Failing rows |\n|---|---|---|---|\n")
+    from datetime import datetime
+    with log.open("a") as f:
+        f.write(f"| {datetime.now():%Y-%m-%d %H:%M:%S} | stage{stage} | {'PASS' if passed else 'FAIL'} | {len(rep.lines([stage]))} |\n")
+    if passed:
+        print(f"\nNEXT: stage {stage} passed. Go on to the next stage.")
+        return 0
+    results = [l.split("|")[3].strip() for l in log.read_text().splitlines() if l.startswith("| 20") and l.split("|")[2].strip() == f"stage{stage}"]
+    fails_in_row = 0
+    for r in reversed(results):
+        if r != "FAIL":
+            break
+        fails_in_row += 1
+    if fails_in_row <= MAX_REDOS:
+        print(f"\nREDO {fails_in_row} of {MAX_REDOS}: stage {stage} failed. Redo stage {stage} using the failing rows above, "
+              f"rewrite its table in {results_path.name}, then run `python3 scripts/qa.py stage{stage}` again.")
+        return 1
+    stop = results_path.parent / f"qa-stop-stage{stage}.md"
+    stop.write_text(
+        f"# Stage {stage} stopped: failed its check {fails_in_row} times (first try and {MAX_REDOS} redos)\n\n"
+        f"Results file: {results_path}\n\nThe run is stopped here and needs a human. Failing rows:\n\n"
+        + "\n".join(f"- {l}" for l in rep.lines([stage])) + "\n")
+    print(f"\nSTOP: stage {stage} failed its check {fails_in_row} times (first try and {MAX_REDOS} redos). "
+          f"Do not redo it again and do not start the next stage. Show the human {stop}, which lists the failing rows.")
+    return 2
 
 
 def allowed_stages():
@@ -147,7 +245,7 @@ def allowed_stages():
 def check_stage1(results, transcripts, rep):
     header, rows, _ = read_table(results, STAGE_HEADINGS[1])
     if header is None:
-        rep.fail("stage1", "table", f"heading '{STAGE_HEADINGS[1]}' or its table not found")
+        rep.fail("S1-1", "table", f"heading '{STAGE_HEADINGS[1]}' or its table not found")
         return {}
     pains, seen_ids, seen_quotes, calls_covered = {}, set(), {}, set()
     order = list(transcripts)
@@ -158,59 +256,59 @@ def check_stage1(results, transcripts, rep):
         item = pid or f"row {n}"
         if pid.lower() == "none":
             if call not in transcripts:
-                rep.fail("stage1", item, f"call '{call}' has no transcript file")
+                rep.fail("S1-2", item, f"call '{call}' has no transcript file")
             calls_covered.add(call)
             continue
         if not re.fullmatch(r"P\d+", pid):
-            rep.fail("stage1", item, "ID must be P1, P2, ... (or 'none' for a call with no pain points)")
+            rep.fail("S1-1", item, "ID must be P1, P2, ... (or 'none' for a call with no pain points)")
             continue
         if pid in seen_ids:
-            rep.fail("stage1", item, "duplicate ID")
+            rep.fail("S1-5", item, "duplicate ID")
         seen_ids.add(pid)
         if int(pid[1:]) != len(seen_ids):
-            rep.fail("stage1", item, f"IDs must run P1, P2, ... without gaps; expected P{len(seen_ids)}")
+            rep.fail("S1-5", item, f"IDs must run P1, P2, ... without gaps; expected P{len(seen_ids)}")
         for field, value in (("Call", call), ("Speaker", speaker), ("Pain point", pain), ("Exact quote", quote)):
             if not value or value == '""':
-                rep.fail("stage1", item, f"required field '{field}' is empty")
+                rep.fail("S1-1", item, f"required field '{field}' is empty")
         if pain and len(words(pain)) >= 12:
-            rep.fail("stage1", item, f"pain point must be under 12 words (has {len(words(pain))})")
+            rep.fail("S1-1", item, f"pain point must be under 12 words (has {len(words(pain))})")
         t = transcripts.get(call)
         if t is None:
-            rep.fail("stage1", item, f"call '{call}' has no transcript file in the transcript folder")
+            rep.fail("S1-2", item, f"call '{call}' has no transcript file in the transcript folder")
             continue
         calls_covered.add(call)
         if speaker in t.sellers:
-            rep.fail("stage1", item, f"speaker '{speaker}' is the seller in {t.path.name}; only buyer or client lines count")
+            rep.fail("S1-4", item, f"speaker '{speaker}' is the seller in {t.path.name}; only buyer or client lines count")
         turn = t.find(quote, speaker) if quote else None
         if quote and turn is None:
             if t.find(quote) is not None:
                 who = t.turns[t.find(quote)][0]
-                rep.fail("stage1", item, f"quote is spoken by {who}, not {speaker}, in {t.path.name}: \"{quote}\"")
+                rep.fail("S1-3", item, f"quote is spoken by {who}, not {speaker}, in {t.path.name}: \"{quote}\"")
             else:
-                rep.fail("stage1", item, f"quote not found verbatim in any {speaker} line of {t.path.name}: \"{quote}\"")
+                rep.fail("S1-3", item, f"quote not found verbatim in any {speaker} line of {t.path.name}: \"{quote}\"")
         if turn is not None:
             pos = (order.index(call), turn)
             if pos < last_pos:
-                rep.fail("stage1", item, "rows must be in transcript order, call 1 first")
+                rep.fail("S1-5", item, "rows must be in transcript order, call 1 first")
             last_pos = max(last_pos, pos)
         key = (call, norm(quote).lower())
         for (c, q), other in seen_quotes.items():
             if c == call and q and key[1] and (q in key[1] or key[1] in q):
-                rep.fail("stage1", item, f"duplicate of {other}: same or overlapping quote in {call}")
+                rep.fail("S1-5", item, f"duplicate of {other}: same or overlapping quote in {call}")
         seen_quotes[key] = pid
         pains[pid] = {"call": call, "speaker": speaker, "quote": quote, "pain": pain}
     for call, t in transcripts.items():
         if call not in calls_covered:
-            rep.fail("stage1", call, f"{t.path.name} produced no rows; add its pain points or a 'none' row")
+            rep.fail("S1-2", call, f"{t.path.name} produced no rows; add its pain points or a 'none' row")
     if not rows:
-        rep.fail("stage1", "table", "the table has no rows")
+        rep.fail("S1-1", "table", "the table has no rows")
     return pains
 
 
 def check_stage2(results, transcripts, pains, rep):
     header, rows, _ = read_table(results, STAGE_HEADINGS[2])
     if header is None:
-        rep.fail("stage2", "table", f"heading '{STAGE_HEADINGS[2]}' or its table not found")
+        rep.fail("S2-1", "table", f"heading '{STAGE_HEADINGS[2]}' or its table not found")
         return {}
     allowed = {s.lower(): s for s in allowed_stages()}
     tags, counts = {}, {}
@@ -219,15 +317,15 @@ def check_stage2(results, transcripts, pains, rep):
         item = pid or f"row {n}"
         counts[pid] = counts.get(pid, 0) + 1
         if pid not in pains:
-            rep.fail("stage2", item, "not a stage 1 ID; stage 2 must not add pain points")
+            rep.fail("S2-2", item, "not a stage 1 ID; stage 2 must not add pain points")
             continue
         stage, signal, why = col(row, "Stage"), unquote(col(row, "Signal")), col(row, "Why")
         if stage.lower() not in allowed:
-            rep.fail("stage2", item, f"stage '{stage}' is not one of: {', '.join(allowed.values())}")
+            rep.fail("S2-3", item, f"stage '{stage}' is not one of: {', '.join(allowed.values())}")
         else:
             tags[pid] = allowed[stage.lower()]
         if not signal:
-            rep.fail("stage2", item, "signal (the buyer's exact words) is empty")
+            rep.fail("S2-4", item, "signal (the buyer's exact words) is empty")
         else:
             p = pains[pid]
             t = transcripts[p["call"]]
@@ -235,21 +333,21 @@ def check_stage2(results, transcripts, pains, rep):
                 where = t.find(signal)
                 reason = (f"signal is spoken by {t.turns[where][0]}, not {p['speaker']}" if where is not None
                           else f"signal not found verbatim in any {p['speaker']} line of {t.path.name}")
-                rep.fail("stage2", item, f"{reason}: \"{signal}\"")
+                rep.fail("S2-4", item, f"{reason}: \"{signal}\"")
         if not re.search(r"\bQ[1-4]\b", why):
-            rep.fail("stage2", item, "'Why' must name the deciding tie-break question (Q1 to Q4)")
+            rep.fail("S2-5", item, "'Why' must name the deciding tie-break question (Q1 to Q4)")
     for pid in pains:
         if counts.get(pid, 0) == 0:
-            rep.fail("stage2", pid, "stage 1 pain point has no stage 2 row")
+            rep.fail("S2-2", pid, "stage 1 pain point has no stage 2 row")
         elif counts[pid] > 1:
-            rep.fail("stage2", pid, f"tagged {counts[pid]} times; each pain point gets exactly one stage")
+            rep.fail("S2-2", pid, f"tagged {counts[pid]} times; each pain point gets exactly one stage")
     return tags
 
 
 def check_stage3(results, transcripts, pains, tags, rep):
     header, rows, after = read_table(results, STAGE_HEADINGS[3])
     if header is None:
-        rep.fail("stage3", "table", f"heading '{STAGE_HEADINGS[3]}' or its table not found")
+        rep.fail("S3-1", "table", f"heading '{STAGE_HEADINGS[3]}' or its table not found")
         return []
     themes, placed, prev_count = [], {}, None
     for n, row in enumerate(rows, 1):
@@ -257,41 +355,41 @@ def check_stage3(results, transcripts, pains, tags, rep):
         item = f"theme '{name}'"
         ids = re.findall(r"P\d+", col(row, "Pain points"))
         if not ids:
-            rep.fail("stage3", item, "cites no pain point IDs")
+            rep.fail("S3-2", item, "cites no pain point IDs")
         for pid in ids:
             if pid not in pains:
-                rep.fail("stage3", item, f"cites {pid}, which is not a stage 1 ID")
+                rep.fail("S3-2", item, f"cites {pid}, which is not a stage 1 ID")
             elif pid in placed:
-                rep.fail("stage3", item, f"{pid} is already in theme '{placed[pid]}'; every pain point belongs to exactly one theme")
+                rep.fail("S3-2", item, f"{pid} is already in theme '{placed[pid]}'; every pain point belongs to exactly one theme")
             else:
                 placed[pid] = name
         real = [p for p in dict.fromkeys(ids) if p in pains]
         count = col(row, "Count")
         if not count.isdigit() or int(count) != len(ids):
-            rep.fail("stage3", item, f"Count is '{count}' but {len(ids)} IDs are listed")
+            rep.fail("S3-3", item, f"Count is '{count}' but {len(ids)} IDs are listed")
         want_calls = {pains[p]["call"] for p in real}
         got_calls = set(re.findall(r"call-\d+", col(row, "Calls")))
         if got_calls != want_calls:
-            rep.fail("stage3", item, f"Calls lists {sorted(got_calls)} but its IDs come from {sorted(want_calls)}")
+            rep.fail("S3-3", item, f"Calls lists {sorted(got_calls)} but its IDs come from {sorted(want_calls)}")
         want_stages = {tags[p] for p in real if p in tags}
         got_stages = {s for s in allowed_stages() if re.search(rf"\b{re.escape(s)}\b", col(row, "Stages"), re.I)}
         if got_stages != want_stages:
-            rep.fail("stage3", item, f"Stages seen lists {sorted(got_stages)} but its pain points carry {sorted(want_stages)}")
+            rep.fail("S3-3", item, f"Stages seen lists {sorted(got_stages)} but its pain points carry {sorted(want_stages)}")
         quote = unquote(col(row, "Best quote"))
         sources = [transcripts[pains[p]["call"]] for p in real]
         if not quote:
-            rep.fail("stage3", item, "best quote is empty")
+            rep.fail("S3-4", item, "best quote is empty")
         elif not any(t.find(quote, s) is not None for t in sources for s in t.buyers()):
-            rep.fail("stage3", item, f"best quote not found verbatim in a buyer line of the theme's calls: \"{quote}\"")
+            rep.fail("S3-4", item, f"best quote not found verbatim in a buyer line of the theme's calls: \"{quote}\"")
         if prev_count is not None and len(ids) > prev_count:
-            rep.fail("stage3", item, "themes must be sorted by pain point count, highest first")
+            rep.fail("S3-5", item, "themes must be sorted by pain point count, highest first")
         prev_count = len(ids)
         themes.append({"name": name, "ids": real})
     for pid in pains:
         if pid not in placed:
-            rep.fail("stage3", pid, "pain point is in no theme")
+            rep.fail("S3-2", pid, "pain point is in no theme")
     if not 1 <= len(themes) <= max(len(pains), 1):
-        rep.fail("stage3", "table", f"{len(themes)} themes; must be between 1 and the number of pain points ({len(pains)})")
+        rep.fail("S3-5", "table", f"{len(themes)} themes; must be between 1 and the number of pain points ({len(pains)})")
     # The line naming the most common stage must name every stage that ties for the top count.
     stage_counts = {}
     for s in tags.values():
@@ -301,13 +399,13 @@ def check_stage3(results, transcripts, pains, tags, rep):
         leaders = [s for s, c in stage_counts.items() if c == top]
         line = next((l for l in after.splitlines() if re.search(r"common", l, re.I)), "")
         if not line:
-            rep.fail("stage3", "summary lines", "no line under the table names the most common awareness stage")
+            rep.fail("S3-6", "summary lines", "no line under the table names the most common awareness stage")
         else:
             missing = [s for s in leaders if not re.search(rf"\b{re.escape(s)}\b", line, re.I)]
             if missing:
-                rep.fail("stage3", "summary lines", f"most common stage line misses {missing} ({top} pain points each)")
+                rep.fail("S3-6", "summary lines", f"most common stage line misses {missing} ({top} pain points each)")
         if not re.search(r"first", after, re.I):
-            rep.fail("stage3", "summary lines", "no line under the table names the theme to act on first")
+            rep.fail("S3-6", "summary lines", "no line under the table names the theme to act on first")
     return themes
 
 
@@ -346,7 +444,7 @@ def score_answer_key(results, transcripts, pains, tags, themes, rep):
     seller_rows = [pid for pid, p in pains.items() if p["speaker"] in transcripts[p["call"]].sellers]
     trap_rows = [pid for pid, p in pains.items()
                  if any(tq in p["quote"].lower() or p["quote"].lower() in tq for tq in trap_quotes)]
-    invented = [f for f in rep.failures if "not found verbatim" in f or "is spoken by" in f]
+    invented = [l for _, l in rep.failures if "not found verbatim" in l or "is spoken by" in l]
 
     found_themes = []
     for kt in key_themes:
@@ -383,7 +481,7 @@ def score_answer_key(results, transcripts, pains, tags, themes, rep):
     print(f"  Answer key: {'PASS' if passed else 'FAIL'}")
     for name, value, ok in checks:
         if not ok:
-            rep.fail("answer-key", name, f"{value} is below the pass mark in answer-key/answer-key.md")
+            rep.fail("AK", name, f"{value} is below the pass mark in answer-key/answer-key.md")
 
 
 # ---------- main ----------
@@ -394,6 +492,7 @@ def main():
     ap.add_argument("--answer-key", action="store_true", help="also score against answer-key/ (after the run only)")
     ap.add_argument("--results", default=str(ROOT / "output" / "results.md"))
     ap.add_argument("--transcripts", default=str(ROOT / "sample-transcripts"))
+    ap.add_argument("--no-log", action="store_true", help="do not record this check in output/qa-log.md (no redo counting)")
     args = ap.parse_args()
 
     results_path = Path(args.results)
@@ -404,7 +503,7 @@ def main():
         return 1
     for t in transcripts.values():
         if not t.sellers:
-            rep.fail("setup", t.path.name, "no 'Speakers:' line marking who is the seller, e.g. **Sam** (seller)")
+            rep.fail("S1-2", t.path.name, "no 'Speakers:' line marking who is the seller, e.g. **Sam** (seller)")
     if not results_path.exists():
         print(f"FAIL setup | {results_path} | - | results file not found")
         return 1
@@ -412,24 +511,26 @@ def main():
 
     want = {"stage1": 1, "stage2": 2, "stage3": 3, "all": 3}[args.stage]
     pains = check_stage1(results, transcripts, rep)
-    stage1_failures = len(rep.failures)
     tags, themes = {}, []
     if want >= 2:
         tags = check_stage2(results, transcripts, pains, rep)
     if want >= 3:
         themes = check_stage3(results, transcripts, pains, tags, rep)
-    if args.stage in ("stage2", "stage3") and stage1_failures:
-        print(f"note: stage 1 has {stage1_failures} failure(s); later checks build on it, so fix stage 1 first")
     if args.answer_key:
         score_answer_key(results, transcripts, pains, tags, themes, rep)
 
-    for line in rep.failures:
-        print(line)
-    if rep.failures:
-        print(f"\n{args.stage}: {len(rep.failures)} failure(s)")
-        return 1
-    print(f"{args.stage}: all checks passed ({len(pains)} pain points, {len(tags)} tags, {len(themes)} themes)")
-    return 0
+    # Later stages build on earlier ones, so stageN shows and requires every matrix up to N.
+    passed = all([rep.matrix(n) for n in range(1, want + 1)])
+    failing = rep.lines()
+    if failing:
+        print("\nFailing rows:")
+        for line in failing:
+            print(line)
+    passed = passed and not failing
+    print(f"\n{args.stage}: {'PASS' if passed else 'FAIL'} ({len(pains)} pain points, {len(tags)} tags, {len(themes)} themes, {len(failing)} failing rows)")
+    if args.stage == "all" or args.no_log:
+        return 0 if passed else 1
+    return redo_loop(want, passed, rep, results_path)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 ---
 title: Start here, mini Theme Engine
 created: 2026-10-15 16:58
-last_updated: 2026-10-16 09:30
+last_updated: 2026-10-16 09:36
 owner: the workflow author
 status: active
 ---
@@ -34,7 +34,9 @@ Do the stages in order. Finish each stage's definition of done before starting t
 3. Stage 2: follow `stages/02_tag-awareness-stage.md`.
 4. Stage 3: follow `stages/03_roll-up-themes.md`.
 
-Each stage file ends with a check. If Python 3 is available, run it after that stage, for example `python3 scripts/qa.py stage1`, and fix the output until it prints "all checks passed". It exits non-zero and names the file, row and reason for every failure. `python3 scripts/qa.py all` checks all three stages at once. If you cannot run Python, check the definition of done by hand and say so in the chat.
+Each stage file has a Definition of Done and a check. After each stage, run its check, for example `python3 scripts/qa.py stage1`. It prints an evaluation matrix (each criterion, the check that tests it, PASS or FAIL, and the detail) and an overall PASS or FAIL.
+
+**The redo loop.** On PASS, go to the next stage. On FAIL, redo that stage using the failing rows the check lists, then run the check again. At most 2 redos per stage: if it fails a third time, the check says STOP and writes `output/qa-stop-stageN.md`. Stop the run and show that file to the human. Never skip a failed check or carry on as if it passed. The check counts attempts in `output/qa-log.md`, so start a fresh run with an empty `output/` folder. If you cannot run Python, check each Definition of Done by hand and follow the same loop.
 
 Write all three tables into one file, `output/results.md`, under the three headings the stage contracts name. If you cannot create files, print the three tables in the chat instead, in the same order.
 
